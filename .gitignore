@@ -2,3 +2,5 @@ build/
 managed_components/
 dependencies.lock
 .vscode/settings.json
+sdkconfig
+sdkconfig.old
