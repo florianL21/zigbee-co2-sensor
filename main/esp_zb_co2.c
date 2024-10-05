@@ -11,10 +11,17 @@
 #include "sensirion_common.h"
 #include "sensirion_i2c_hal.h"
 
+#ifdef CONFIG_PM_ENABLE
+#include "esp_pm.h"
+#include "esp_private/esp_clk.h"
+#include "esp_sleep.h"
+#endif
+
 static const char *TAG = "CO2";
 
 #define SDC4X_SDA_PIN GPIO_NUM_22
 #define SDC4X_SCL_PIN GPIO_NUM_23
+#define MEASURE_INTERVAL_MS 30000
 
 #define DEFINE_PSTRING(var, str)   \
     const struct                   \
@@ -66,6 +73,7 @@ void sdc41_task(void *pvParameters)
     }
 
     ESP_LOGI(TAG, "Waiting for first measurement... (5 sec)");
+    sensirion_i2c_hal_sleep_usec(100000);
 
     uint16_t co2;
     int32_t temperature;
@@ -74,12 +82,8 @@ void sdc41_task(void *pvParameters)
     int16_t zb_humidity;
     float_t zb_co2;
 
-
-
     while (1)
     {
-        // Read Measurement
-        sensirion_i2c_hal_sleep_usec(100000);
         bool data_ready_flag = false;
         error = scd4x_get_data_ready_flag(&data_ready_flag);
         if (error) {
@@ -100,12 +104,12 @@ void sdc41_task(void *pvParameters)
             zb_temperature = temperature/10;
             zb_humidity = humidity/10;
             zb_co2 = (float_t)co2/1000000.0f;
-            ESP_LOGI(TAG, "Hum: %.1f %%; Tmp: %.1f °C; CO2: %f ppm", zb_humidity/100.0, zb_temperature/100.0, zb_co2);
+            ESP_LOGI(TAG, "Hum: %.1f %%; Tmp: %.1f °C; CO2: %d ppm", zb_humidity/100.0, zb_temperature/100.0, co2);
             reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, 2);
             reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, 2);
             reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, &zb_co2, 4);
         }
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        vTaskDelay(MEASURE_INTERVAL_MS / portTICK_PERIOD_MS);
     }
 }
 
@@ -117,7 +121,6 @@ static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t *message)
 {
     esp_err_t ret = ESP_OK;
-    bool light_state = 0;
     ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
     ESP_RETURN_ON_FALSE(message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->info.status);
@@ -275,6 +278,19 @@ static void esp_zb_task(void *pvParameters)
     esp_zb_stack_main_loop();
 }
 
+static esp_err_t esp_zb_power_save_init(void)
+{
+    esp_err_t rc = ESP_OK;
+    int cur_cpu_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = cur_cpu_freq_mhz,
+        .min_freq_mhz = cur_cpu_freq_mhz,
+        .light_sleep_enable = true
+    };
+    rc = esp_pm_configure(&pm_config);
+    return rc;
+}
+
 void app_main(void)
 {
     esp_zb_platform_config_t config = {
@@ -282,6 +298,8 @@ void app_main(void)
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
     };
     ESP_ERROR_CHECK(nvs_flash_init());
+    /* enable power saving */
+    ESP_ERROR_CHECK(esp_zb_power_save_init());
     /* load Zigbee light_bulb platform config to initialization */
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     /* hardware related and device init */
