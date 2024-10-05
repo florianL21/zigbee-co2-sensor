@@ -1,0 +1,3 @@
+[submodule "esp-idf-scd4x"]
+	path = esp-idf-scd4x
+	url = https://github.com/florianL21/esp-idf-scd4x.git
