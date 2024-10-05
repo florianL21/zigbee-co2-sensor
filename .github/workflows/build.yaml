@@ -8,6 +8,9 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        target: ["esp32c6", "esp32h2"]
 
     runs-on: ubuntu-latest
 
@@ -19,6 +22,7 @@ jobs:
     - name: esp-idf build
       uses: espressif/esp-idf-ci-action@v1
       with:
-        esp_idf_version: v5.3.0
-        target: esp32c6
+        esp_idf_version: v5.3
+        target: ${{ matrix.target }}
         path: .
+    
