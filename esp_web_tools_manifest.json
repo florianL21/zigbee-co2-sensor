@@ -1,0 +1,22 @@
+{
+    "name": "",
+    "version": "1",
+    "home_assistant_domain": "zha",
+    "funding_url": "https://github.com/sponsors/florianL21",
+    "new_install_prompt_erase": true,
+    "new_install_improv_wait_time": 0,
+    "builds": [
+        {
+            "chipFamily": "ESP32-C6",
+            "parts": [
+                { "path": "https://github.com/florianL21/zigbee-co2-sensor/releases/download/{release}/co2_sensor_esp32c6.bin", "offset": 0 }
+            ]
+        },
+        {
+            "chipFamily": "ESP32-H2",
+            "parts": [
+                { "path": "https://github.com/florianL21/zigbee-co2-sensor/releases/download/{release}/co2_sensor_esp32h2.bin", "offset": 0 }
+            ]
+        }
+    ]
+}

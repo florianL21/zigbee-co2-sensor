@@ -9,13 +9,13 @@
         {
             "chipFamily": "ESP32-C6",
             "parts": [
-                { "path": "merged-firmware.bin", "offset": 0 }
+                { "path": "https://github.com/florianL21/zigbee-co2-sensor/releases/latest/download/co2_sensor_esp32c6.bin", "offset": 0 }
             ]
         },
         {
             "chipFamily": "ESP32-H2",
             "parts": [
-                { "path": "esp8266.bin", "offset": 0 }
+                { "path": "https://github.com/florianL21/zigbee-co2-sensor/releases/latest/download/co2_sensor_esp32h2.bin", "offset": 0 }
             ]
         }
     ]
