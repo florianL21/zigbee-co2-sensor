@@ -1,5 +1,5 @@
 {
-    "name": "",
+    "name": "Zigbee CO2 Sensor",
     "version": "1",
     "home_assistant_domain": "zha",
     "funding_url": "https://github.com/sponsors/florianL21",
