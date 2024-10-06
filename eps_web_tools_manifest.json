@@ -1,0 +1,22 @@
+{
+    "name": "",
+    "version": "1",
+    "home_assistant_domain": "zha",
+    "funding_url": "https://github.com/sponsors/florianL21",
+    "new_install_prompt_erase": true,
+    "new_install_improv_wait_time": 0,
+    "builds": [
+        {
+            "chipFamily": "ESP32-C6",
+            "parts": [
+                { "path": "merged-firmware.bin", "offset": 0 }
+            ]
+        },
+        {
+            "chipFamily": "ESP32-H2",
+            "parts": [
+                { "path": "esp8266.bin", "offset": 0 }
+            ]
+        }
+    ]
+}

@@ -10,7 +10,11 @@ jobs:
   build:
     strategy:
       matrix:
-        target: ["esp32c6", "esp32h2"]
+        target:
+          - chip: esp32c6
+            flash_freq: 80m
+          - chip: esp32h2
+            flash_freq: 48m
 
     runs-on: ubuntu-latest
 
@@ -23,6 +27,23 @@ jobs:
       uses: espressif/esp-idf-ci-action@v1
       with:
         esp_idf_version: v5.3
-        target: ${{ matrix.target }}
+        target: ${{ matrix.target.chip }}
         path: .
-    
+        command: |
+          idf.py build && \
+          esptool.py --chip ${{ matrix.target.chip }} merge_bin \
+          -o build/co2_sensor_${{ matrix.target.chip }}.bin \
+          --flash_mode dio \
+          --flash_freq ${{ matrix.target.flash_freq }} \
+          --flash_size 2MB \
+          0x0 build/bootloader/bootloader.bin \
+          0x10000 build/zigbee_co2_sensor.bin \
+          0x8000 build/partition_table/partition-table.bin
+    - name: Store built binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: co2_sensor_${{ matrix.target.chip }}
+        path: |
+          build/co2_sensor_${{ matrix.target.chip }}.bin
+          build/zigbee_co2_sensor.elf
+          build/zigbee_co2_sensor.map
