@@ -4,3 +4,4 @@ dependencies.lock
 .vscode/settings.json
 sdkconfig
 sdkconfig.old
+release
