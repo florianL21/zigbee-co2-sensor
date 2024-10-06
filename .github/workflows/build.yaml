@@ -37,15 +37,8 @@ jobs:
           target: ${{ matrix.target.chip }}
           path: .
           command: |
-            idf.py build && \
-            esptool.py --chip ${{ matrix.target.chip }} merge_bin \
-            -o build/co2_sensor_${{ matrix.target.chip }}.bin \
-            --flash_mode dio \
-            --flash_freq ${{ matrix.target.flash_freq }} \
-            --flash_size 2MB \
-            0x0 build/bootloader/bootloader.bin \
-            0x10000 build/zigbee_co2_sensor.bin \
-            0x8000 build/partition_table/partition-table.bin
+            idf.py build &&
+            idf.py merge-bin -o co2_sensor_${{ matrix.target.chip }}.bin -f raw
       - run: |
           sudo mv build/zigbee_co2_sensor.elf build/co2_sensor_${{ matrix.target.chip }}.elf && \
           sudo mv build/zigbee_co2_sensor.map build/co2_sensor_${{ matrix.target.chip }}.map
@@ -81,11 +74,14 @@ jobs:
           merge-multiple: true
       - run: mkdir -p docs/bin_latest && cp release/co2_sensor_*.bin docs/bin_latest/
       - name: Commit binaries
-        uses: stefanzweifel/git-auto-commit-action@v4
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Release of ${{ inputs.version }}
           tagging_message: ${{ inputs.version }}
+          skip_checkout: true
+          skip_fetch: false
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          tag_name: ${{ inputs.version }}
