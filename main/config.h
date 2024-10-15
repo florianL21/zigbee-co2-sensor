@@ -6,7 +6,8 @@
 
 #define SDC4X_SDA_PIN GPIO_NUM_22
 #define SDC4X_SCL_PIN  GPIO_NUM_23
-#define MEASURE_INTERVAL_MS 30000
+// Recommened measurement interval from sensirion is 5 minutes as the default ASC settings are assuming 5 minutes
+#define MEASURE_INTERVAL_MS (60000*5)
 
 
 // Sanity values for measurement bounds

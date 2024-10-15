@@ -7,6 +7,7 @@
 #include "zigbee.h"
 #include "tasks.h"
 #include "esp_pm.h"
+#include "esp_check.h"
 #include "esp_private/esp_clk.h"
 #include "esp_sleep.h"
 #include "config.h"
@@ -74,8 +75,9 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         else
         {
             /* commissioning failed */
-            ESP_LOGW(TAG, "Failed to initialize Zigbee stack (status: %s)", esp_err_to_name(err_status));
-            abort();
+            ESP_LOGW(TAG, "Failed to initialize Zigbee stack (status: %s). Resetting the esp after 2s", esp_err_to_name(err_status));
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            esp_restart();
         }
         break;
     case ESP_ZB_BDB_SIGNAL_STEERING:
@@ -95,6 +97,10 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
         break;
+    case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
+        ESP_LOGI(TAG, "Zigbee can sleep");
+        esp_zb_sleep_now();
+        break;
     default:
         ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type,
                  esp_err_to_name(err_status));
@@ -106,6 +112,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
 static void esp_zb_task(void *pvParameters)
 {
     esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
+    esp_zb_sleep_enable(true);
+    // zb_zdo_pim_set_long_poll_interval(ED_KEEP_ALIVE);
     esp_zb_init(&zb_nwk_cfg);
 
     // ------------------------------ Cluster BASIC ------------------------------
@@ -189,15 +197,12 @@ static void esp_zb_task(void *pvParameters)
 
 static esp_err_t esp_zb_power_save_init(void)
 {
-    esp_err_t rc = ESP_OK;
-    int cur_cpu_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = cur_cpu_freq_mhz,
-        .min_freq_mhz = cur_cpu_freq_mhz,
+        .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+        .min_freq_mhz = 40,
         .light_sleep_enable = true
     };
-    rc = esp_pm_configure(&pm_config);
-    return rc;
+    return esp_pm_configure(&pm_config);
 }
 
 void configure_internal_antenna(void) {
