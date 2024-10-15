@@ -10,15 +10,8 @@
 #include "scd4x_i2c.h"
 #include "sensirion_common.h"
 #include "sensirion_i2c_hal.h"
+#include "config.h"
 
-#include "esp_pm.h"
-#include "esp_private/esp_clk.h"
-#include "esp_sleep.h"
-
-
-#define SDC4X_SDA_PIN GPIO_NUM_22
-#define SDC4X_SCL_PIN GPIO_NUM_23
-#define MEASURE_INTERVAL_MS 30000
 
 static const char *TAG = "sdc41_task";
 
@@ -55,6 +48,8 @@ void sdc41_task(void *pvParameters)
     int16_t zb_temperature;
     int16_t zb_humidity;
     float_t zb_co2;
+    float_t sanity_temperature;
+    float_t sanity_humidity;
 
     while (1)
     {
@@ -68,7 +63,6 @@ void sdc41_task(void *pvParameters)
             continue;
         }
 
-
         error = scd4x_read_measurement(&co2, &temperature, &humidity);
         if (error) {
             ESP_LOGE(TAG, "Error executing scd4x_read_measurement(): %i", error);
@@ -78,10 +72,24 @@ void sdc41_task(void *pvParameters)
             zb_temperature = temperature/10;
             zb_humidity = humidity/10;
             zb_co2 = (float_t)co2/1000000.0f;
-            ESP_LOGI(TAG, "Hum: %.1f %%; Tmp: %.1f °C; CO2: %d ppm", zb_humidity/100.0, zb_temperature/100.0, co2);
-            reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, 2);
-            reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, 2);
-            reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, &zb_co2, 4);
+            sanity_temperature = zb_temperature/100.0;
+            sanity_humidity = zb_humidity/100.0;
+            ESP_LOGI(TAG, "Hum: %.1f %%; Tmp: %.1f °C; CO2: %d ppm", sanity_humidity, sanity_temperature, co2);
+            if(sanity_temperature >= TEMP_MIN && sanity_temperature <= TEMP_MAX) {
+                reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT, ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID, &zb_temperature, 2);
+            } else {
+                ESP_LOGW(TAG, "Temperature value is implausible and no Zigbee update will be sent");
+            }
+            if(sanity_humidity >= HUMID_MIN && sanity_humidity <= HUMID_MAX) {
+                reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &zb_humidity, 2);
+            } else {
+                ESP_LOGW(TAG, "Humidity value is implausible and no Zigbee update will be sent");
+            }
+            if(co2 >= CO2_MIN && co2 <= CO2_MAX) {
+                reportAttribute(HA_ESP_CO2_ENDPOINT, ESP_ZB_ZCL_CLUSTER_ID_CARBON_DIOXIDE_MEASUREMENT, ESP_ZB_ZCL_ATTR_CARBON_DIOXIDE_MEASUREMENT_MEASURED_VALUE_ID, &zb_co2, 4);
+            } else {
+                ESP_LOGW(TAG, "CO2 value is implausible and no Zigbee update will be sent");
+            }
         }
         vTaskDelay(MEASURE_INTERVAL_MS / portTICK_PERIOD_MS);
     }

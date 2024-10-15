@@ -9,6 +9,7 @@
 #include "esp_pm.h"
 #include "esp_private/esp_clk.h"
 #include "esp_sleep.h"
+#include "config.h"
 
 static const char *TAG = "CO2";
 
@@ -138,24 +139,24 @@ static void esp_zb_task(void *pvParameters)
     // ------------------------------ Cluster Temperature ------------------------------
     esp_zb_temperature_meas_cluster_cfg_t temperature_meas_cfg = {
         .measured_value = 0xFFFF,
-        .min_value = -10,
-        .max_value = 60,
+        .min_value = TEMP_MIN,
+        .max_value = TEMP_MAX,
     };
     esp_zb_attribute_list_t *esp_zb_temperature_meas_cluster = esp_zb_temperature_meas_cluster_create(&temperature_meas_cfg);
 
     // ------------------------------ Cluster Humidity ------------------------------
     esp_zb_humidity_meas_cluster_cfg_t humidity_meas_cfg = {
         .measured_value = 0xFFFF,
-        .min_value = 0,
-        .max_value = 95,
+        .min_value = HUMID_MIN,
+        .max_value = HUMID_MAX,
     };
     esp_zb_attribute_list_t *esp_zb_humidity_meas_cluster = esp_zb_humidity_meas_cluster_create(&humidity_meas_cfg);
 
     // ------------------------------ Cluster CO2 -----------------------------------
     esp_zb_carbon_dioxide_measurement_cluster_cfg_t carbon_dioxide_meas_cfg = {
         .measured_value = 500,
-        .min_measured_value = 0,
-        .max_measured_value = 5000,
+        .min_measured_value = CO2_MIN,
+        .max_measured_value = CO2_MAX,
     };
     esp_zb_attribute_list_t *esp_zb_carbon_dioxide_meas_cluster = esp_zb_carbon_dioxide_measurement_cluster_create(&carbon_dioxide_meas_cfg);
 
@@ -199,8 +200,19 @@ static esp_err_t esp_zb_power_save_init(void)
     return rc;
 }
 
+void configure_internal_antenna(void) {
+    gpio_reset_pin(GPIO_NUM_3);
+    gpio_reset_pin(GPIO_NUM_14);
+    gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_3, 0);//turn on antenna selection
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_14, 0);//use internal antenna
+}
+
 void app_main(void)
 {
+    configure_internal_antenna();
     esp_zb_platform_config_t config = {
         .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
