@@ -1,3 +1,6 @@
+#pragma once
+
+#include <stdint.h>
 #include "esp_zigbee_core.h"
 
 /* Zigbee configuration */
@@ -26,3 +29,8 @@
     {                                                      \
         .host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE, \
     }
+
+
+void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID, void *value, uint8_t value_length);
+
+
