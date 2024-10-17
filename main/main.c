@@ -7,58 +7,33 @@
 #include "zigbee.h"
 #include "tasks.h"
 #include "esp_pm.h"
-#include "esp_check.h"
 #include "esp_private/esp_clk.h"
 #include "esp_sleep.h"
 #include "config.h"
 
 static const char *TAG = "CO2";
 
-#define DEFINE_PSTRING(var, str)   \
-    const struct                   \
-    {                              \
-        unsigned char len;         \
-        char content[sizeof(str)]; \
-    }(var) = {sizeof(str) - 1, (str)}
-
+TaskHandle_t xSdc41Task;
+TaskHandle_t xZigbeeTask;
 
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
-    ESP_ERROR_CHECK(esp_zb_bdb_start_top_level_commissioning(mode_mask));
+    ESP_RETURN_ON_FALSE(esp_zb_bdb_start_top_level_commissioning(mode_mask) == ESP_OK, , TAG, "Failed to start Zigbee bdb commissioning");
 }
 
-static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t *message)
+void start_sensor_measurements()
 {
-    esp_err_t ret = ESP_OK;
-    ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
-    ESP_RETURN_ON_FALSE(message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
-                        message->info.status);
-    ESP_LOGI(TAG, "Received message: endpoint(0x%x), cluster(0x%x), attribute(0x%x), data size(%d)", message->info.dst_endpoint, message->info.cluster,
-             message->attribute.id, message->attribute.data.size);
-    return ret;
-}
-
-static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id, const void *message)
-{
-    esp_err_t ret = ESP_OK;
-    switch (callback_id)
-    {
-    case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
-        ret = zb_attribute_handler((esp_zb_zcl_set_attr_value_message_t *)message);
-        break;
-    default:
-        ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);
-        break;
-    }
-    return ret;
+    xTaskCreate(sdc41_task, "sdc41_task", 4096, NULL, 5, &xSdc41Task);
 }
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
 {
+    static bool allow_sleep = false;
     uint32_t *p_sg_p = signal_struct->p_app_signal;
     esp_err_t err_status = signal_struct->esp_err_status;
     esp_zb_app_signal_type_t sig_type = *p_sg_p;
+    uint32_t sensor_state = 0;
     switch (sig_type)
     {
     case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
@@ -69,8 +44,14 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
         if (err_status == ESP_OK)
         {
-            ESP_LOGI(TAG, "Start network steering");
-            esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+            ESP_LOGI(TAG, "Device started up in %s factory-reset mode", esp_zb_bdb_is_factory_new() ? "" : "non");
+            if (esp_zb_bdb_is_factory_new()) {
+                ESP_LOGI(TAG, "Start network steering");
+                esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
+            } else {
+                ESP_LOGI(TAG, "Device rebooted");
+                start_sensor_measurements();
+            }
         }
         else
         {
@@ -85,11 +66,11 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         {
             esp_zb_ieee_addr_t extended_pan_id;
             esp_zb_get_extended_pan_id(extended_pan_id);
-            ESP_LOGI(TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d)",
+            ESP_LOGI(TAG, "Joined network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d, Short Address: 0x%04hx)",
                      extended_pan_id[7], extended_pan_id[6], extended_pan_id[5], extended_pan_id[4],
                      extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0],
-                     esp_zb_get_pan_id(), esp_zb_get_current_channel());
-            xTaskCreate(sdc41_task, "sdc41_task", 4096, NULL, 5, NULL);
+                     esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
+            zb_zdo_pim_set_long_poll_interval(ED_KEEP_ALIVE);
         }
         else
         {
@@ -98,101 +79,35 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         break;
     case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
-        ESP_LOGI(TAG, "Zigbee can sleep");
-        esp_zb_sleep_now();
+        BaseType_t xResult = xTaskNotifyWait( pdFALSE,          /* Don't clear bits on entry. */
+                                 ULONG_MAX,        /* Clear all bits on exit. */
+                                 &sensor_state,
+                                 0 ); /* do not wait for the flag to be set, simply skip going to sleep in this case */
+        if( xResult == pdPASS )
+        {
+            switch(sensor_state) {
+                case CO2_MEASUREMENT_PENDING:
+                    allow_sleep = false;
+                    break;
+                case CO2_MEASUREMENT_DONE:
+                    allow_sleep = true;
+                    break;
+            }
+        }
+        if(allow_sleep) {
+            // sensor values have been read and sending via zigbee was requested
+            ESP_LOGI(TAG, "Going to sleep");
+            esp_zb_sleep_now();
+            ESP_LOGI(TAG, "Zigbee woke up");
+            esp_sleep_source_t wake_up_cause = esp_sleep_get_wakeup_cause();
+            ESP_LOGI(TAG, "Woke up because: %d", wake_up_cause);
+        }
         break;
     default:
         ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type,
                  esp_err_to_name(err_status));
         break;
     }
-}
-/* initialize Zigbee stack with Zigbee end-device config */
-
-static void esp_zb_task(void *pvParameters)
-{
-    esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
-    esp_zb_sleep_enable(true);
-    // zb_zdo_pim_set_long_poll_interval(ED_KEEP_ALIVE);
-    esp_zb_init(&zb_nwk_cfg);
-
-    // ------------------------------ Cluster BASIC ------------------------------
-    esp_zb_basic_cluster_cfg_t basic_cluster_cfg = {
-        .zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE,
-        .power_source = 0x03,
-    };
-    uint32_t ApplicationVersion = 0x0001;
-    uint32_t StackVersion = 0x0002;
-    uint32_t HWVersion = 0x0002;
-    DEFINE_PSTRING(ManufacturerName, "FlorianL");
-    DEFINE_PSTRING(ModelIdentifier, "CO2 Sensor");
-    DEFINE_PSTRING(DateCode, "20241004");
-    // You can also use the following code to define strings:  {length, 'string'}
-    // uint8_t ModelIdentifier[] = {13, 'E', 'S', 'P', '3', '2', '-', 'H', '2', ' ', 'D', 'e', 'm', 'o'};
-
-    esp_zb_attribute_list_t *esp_zb_basic_cluster = esp_zb_basic_cluster_create(&basic_cluster_cfg);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_APPLICATION_VERSION_ID, &ApplicationVersion);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_STACK_VERSION_ID, &StackVersion);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_HW_VERSION_ID, &HWVersion);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID, (void *)&ManufacturerName);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID, (void *)&ModelIdentifier);
-    esp_zb_basic_cluster_add_attr(esp_zb_basic_cluster, ESP_ZB_ZCL_ATTR_BASIC_DATE_CODE_ID, (void *)&DateCode);
-
-    // ------------------------------ Cluster IDENTIFY ------------------------------
-    esp_zb_identify_cluster_cfg_t identify_cluster_cfg = {
-        .identify_time = 0,
-    };
-    esp_zb_attribute_list_t *esp_zb_identify_cluster = esp_zb_identify_cluster_create(&identify_cluster_cfg);
-
-    // ------------------------------ Cluster Temperature ------------------------------
-    esp_zb_temperature_meas_cluster_cfg_t temperature_meas_cfg = {
-        .measured_value = 0xFFFF,
-        .min_value = TEMP_MIN,
-        .max_value = TEMP_MAX,
-    };
-    esp_zb_attribute_list_t *esp_zb_temperature_meas_cluster = esp_zb_temperature_meas_cluster_create(&temperature_meas_cfg);
-
-    // ------------------------------ Cluster Humidity ------------------------------
-    esp_zb_humidity_meas_cluster_cfg_t humidity_meas_cfg = {
-        .measured_value = 0xFFFF,
-        .min_value = HUMID_MIN,
-        .max_value = HUMID_MAX,
-    };
-    esp_zb_attribute_list_t *esp_zb_humidity_meas_cluster = esp_zb_humidity_meas_cluster_create(&humidity_meas_cfg);
-
-    // ------------------------------ Cluster CO2 -----------------------------------
-    esp_zb_carbon_dioxide_measurement_cluster_cfg_t carbon_dioxide_meas_cfg = {
-        .measured_value = 500,
-        .min_measured_value = CO2_MIN,
-        .max_measured_value = CO2_MAX,
-    };
-    esp_zb_attribute_list_t *esp_zb_carbon_dioxide_meas_cluster = esp_zb_carbon_dioxide_measurement_cluster_create(&carbon_dioxide_meas_cfg);
-
-    // ------------------------------ Create cluster list ------------------------------
-    esp_zb_cluster_list_t *esp_zb_cluster_list = esp_zb_zcl_cluster_list_create();
-    esp_zb_cluster_list_add_basic_cluster(esp_zb_cluster_list, esp_zb_basic_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
-    esp_zb_cluster_list_add_identify_cluster(esp_zb_cluster_list, esp_zb_identify_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
-    esp_zb_cluster_list_add_temperature_meas_cluster(esp_zb_cluster_list, esp_zb_temperature_meas_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
-    esp_zb_cluster_list_add_humidity_meas_cluster(esp_zb_cluster_list, esp_zb_humidity_meas_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
-    esp_zb_cluster_list_add_carbon_dioxide_measurement_cluster(esp_zb_cluster_list, esp_zb_carbon_dioxide_meas_cluster, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
-
-    // ------------------------------ Create endpoint list ------------------------------
-    esp_zb_ep_list_t *esp_zb_ep_list = esp_zb_ep_list_create();
-    esp_zb_endpoint_config_t endpoint_config = {
-        .endpoint = HA_ESP_CO2_ENDPOINT,
-        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
-        .app_device_id = ESP_ZB_HA_ON_OFF_LIGHT_DEVICE_ID,
-    };
-
-    esp_zb_ep_list_add_ep(esp_zb_ep_list, esp_zb_cluster_list, endpoint_config);
-
-    // ------------------------------ Register Device ------------------------------
-    esp_zb_device_register(esp_zb_ep_list);
-    esp_zb_core_action_handler_register(zb_action_handler);
-    esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
-
-    ESP_ERROR_CHECK(esp_zb_start(false));
-    esp_zb_stack_main_loop();
 }
 
 static esp_err_t esp_zb_power_save_init(void)
@@ -202,6 +117,10 @@ static esp_err_t esp_zb_power_save_init(void)
         .min_freq_mhz = 40,
         .light_sleep_enable = true
     };
+    // uart_set_wakeup_threshold(UART_NUM_0, 3);
+    // enable uart as a wakeup source to enable a better experience when trying to flash the firmware
+    // esp_sleep_enable_uart_wakeup(UART_NUM_0);
+    // ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(MEASURE_INTERVAL_MS * 1000));
     return esp_pm_configure(&pm_config);
 }
 
@@ -215,6 +134,13 @@ void configure_internal_antenna(void) {
     gpio_set_level(GPIO_NUM_14, 0);//use internal antenna
 }
 
+void pm_dump(void *pvParameters) {
+    while (1) {
+        esp_pm_dump_locks(stdout);
+        vTaskDelay(30000 / portTICK_PERIOD_MS);
+    }
+}
+
 void app_main(void)
 {
     configure_internal_antenna();
@@ -225,8 +151,10 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     /* enable power saving */
     ESP_ERROR_CHECK(esp_zb_power_save_init());
+    // zb_deep_sleep_init();
     /* load Zigbee light_bulb platform config to initialization */
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     /* hardware related and device init */
-    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, NULL);
+    xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, &xZigbeeTask);
+    xTaskCreate(pm_dump, "pm_dump", 4096, NULL, 5, NULL);
 }

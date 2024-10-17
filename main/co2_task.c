@@ -1,38 +1,41 @@
-#include "nvs_flash.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "ha/esp_zigbee_ha_standard.h"
 #include "zigbee.h"
-#include "string.h"
-#include "driver/gpio.h"
 #include "scd4x_i2c.h"
-#include "sensirion_common.h"
 #include "sensirion_i2c_hal.h"
 #include "config.h"
+#include "tasks.h"
 
 
 static const char *TAG = "sdc41_task";
+
+RTC_DATA_ATTR bool scd4x_initialized = false;
 
 void sdc41_task(void *pvParameters)
 {
     int16_t error = 0;
     sensirion_i2c_hal_init(SDC4X_SDA_PIN, SDC4X_SCL_PIN);
-    // Clean up potential SCD40 states
-    ESP_LOGI(TAG, "Resetting SCD4x sensor state, some i2c errors are expected");
-    scd4x_wake_up();
-    scd4x_stop_periodic_measurement();
-    scd4x_reinit();
+    if(!scd4x_initialized) {
+        // Clean up potential SCD40 states
+        ESP_LOGI(TAG, "First boot after power cycle. Resetting SCD4x sensor state, some i2c errors are expected");
+        scd4x_wake_up();
+        scd4x_stop_periodic_measurement();
+        scd4x_reinit();
 
-    uint16_t serial_0;
-    uint16_t serial_1;
-    uint16_t serial_2;
-    error = scd4x_get_serial_number(&serial_0, &serial_1, &serial_2);
-    if (error) {
-        ESP_LOGE(TAG, "Error executing scd4x_get_serial_number(): %i", error);
+        uint16_t serial_0;
+        uint16_t serial_1;
+        uint16_t serial_2;
+        error = scd4x_get_serial_number(&serial_0, &serial_1, &serial_2);
+        if (error) {
+            ESP_LOGE(TAG, "Error executing scd4x_get_serial_number(): %i", error);
+        } else {
+            ESP_LOGI(TAG, "serial: 0x%04x%04x%04x", serial_0, serial_1, serial_2);
+        }
+        scd4x_initialized = true;
     } else {
-        ESP_LOGI(TAG, "serial: 0x%04x%04x%04x", serial_0, serial_1, serial_2);
+        ESP_LOGI(TAG, "Wakeup from deep sleep. Skipping initialization of SCD4x sensor");
     }
 
     uint16_t co2;
@@ -44,15 +47,23 @@ void sdc41_task(void *pvParameters)
     float_t sanity_temperature;
     float_t sanity_humidity;
     bool plausible;
+    bool measurement_running = false;
+    bool data_ready_flag;
 
     while (1)
     {
-        bool data_ready_flag = false;
-        error = scd4x_measure_single_shot();
-        if (error) {
-            ESP_LOGE(TAG, "Error executing scd4x_measure_single_shot(): %i", error);
-            vTaskDelay(100 / portTICK_PERIOD_MS);
-            continue;
+        data_ready_flag = false;
+        if(!measurement_running) {
+            ESP_LOGI(TAG, "Triggering SCD4x single shot measurement...");
+            xTaskNotify(xZigbeeTask, CO2_MEASUREMENT_PENDING, eSetValueWithOverwrite);
+            measurement_running = true;
+            error = scd4x_measure_single_shot();
+            if (error) {
+                ESP_LOGE(TAG, "Error executing scd4x_measure_single_shot(): %i", error);
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+                measurement_running = false;
+                continue;
+            }
         }
         error = scd4x_get_data_ready_flag(&data_ready_flag);
         if (error) {
@@ -62,6 +73,7 @@ void sdc41_task(void *pvParameters)
         if (!data_ready_flag) {
             continue;
         }
+        measurement_running = false;
 
         error = scd4x_read_measurement(&co2, &temperature, &humidity);
         if (error) {
@@ -93,6 +105,7 @@ void sdc41_task(void *pvParameters)
                 plausible = false;
             }
             if(plausible) {
+                xTaskNotify(xZigbeeTask, CO2_MEASUREMENT_DONE, eSetValueWithOverwrite);
                 vTaskDelay(MEASURE_INTERVAL_MS / portTICK_PERIOD_MS);
             }
         }

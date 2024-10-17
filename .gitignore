@@ -5,3 +5,7 @@ dependencies.lock
 sdkconfig
 sdkconfig.old
 release
+# VSCode settings are defined by the esp-IDF extension
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/tasks.json
