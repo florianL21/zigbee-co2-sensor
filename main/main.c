@@ -16,6 +16,9 @@ static const char *TAG = "CO2";
 TaskHandle_t xSdc41Task;
 TaskHandle_t xZigbeeTask;
 
+// Turn on to get debug output for diagnosing issues with system sleeping behaviour
+#define DEBUG_SLEEP 0
+
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
@@ -96,11 +99,14 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         if(allow_sleep) {
             // sensor values have been read and sending via zigbee was requested
+            #if DEBUG_SLEEP
             ESP_LOGI(TAG, "Going to sleep");
+            #endif
             esp_zb_sleep_now();
-            ESP_LOGI(TAG, "Zigbee woke up");
+            #if DEBUG_SLEEP
             esp_sleep_source_t wake_up_cause = esp_sleep_get_wakeup_cause();
             ESP_LOGI(TAG, "Woke up because: %d", wake_up_cause);
+            #endif
         }
         break;
     default:
@@ -117,10 +123,6 @@ static esp_err_t esp_zb_power_save_init(void)
         .min_freq_mhz = 40,
         .light_sleep_enable = true
     };
-    // uart_set_wakeup_threshold(UART_NUM_0, 3);
-    // enable uart as a wakeup source to enable a better experience when trying to flash the firmware
-    // esp_sleep_enable_uart_wakeup(UART_NUM_0);
-    // ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(MEASURE_INTERVAL_MS * 1000));
     return esp_pm_configure(&pm_config);
 }
 
@@ -133,13 +135,14 @@ void configure_internal_antenna(void) {
     gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
     gpio_set_level(GPIO_NUM_14, 0);//use internal antenna
 }
-
+#if DEBUG_SLEEP
 void pm_dump(void *pvParameters) {
     while (1) {
         esp_pm_dump_locks(stdout);
         vTaskDelay(30000 / portTICK_PERIOD_MS);
     }
 }
+#endif
 
 void app_main(void)
 {
@@ -156,5 +159,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     /* hardware related and device init */
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, &xZigbeeTask);
+    #if DEBUG_SLEEP
     xTaskCreate(pm_dump, "pm_dump", 4096, NULL, 5, NULL);
+    #endif
 }
