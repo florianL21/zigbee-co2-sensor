@@ -54,7 +54,9 @@ The firmware is configured to use the following PIO pins by default:
 
 With the suggested breakout boards from above it would be wired up like this:
 
-![Screenshot of erase flash option in the web UI](images/wire_diagram.png)
+![Wiring diagram](images/wire_diagram.png)
+
+Please note that if you pan on using the included enclose you should solder your wires to the BACK of the sensors PCB!
 
 ## Flashing
 
