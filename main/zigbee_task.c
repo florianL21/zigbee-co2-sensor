@@ -87,7 +87,7 @@ void esp_zb_task(void *pvParameters)
 
     // ------------------------------ Cluster Temperature ------------------------------
     esp_zb_temperature_meas_cluster_cfg_t temperature_meas_cfg = {
-        .measured_value = 0xFFFF,
+        .measured_value = 0,
         .min_value = TEMP_MIN,
         .max_value = TEMP_MAX,
     };
@@ -95,7 +95,7 @@ void esp_zb_task(void *pvParameters)
 
     // ------------------------------ Cluster Humidity ------------------------------
     esp_zb_humidity_meas_cluster_cfg_t humidity_meas_cfg = {
-        .measured_value = 0xFFFF,
+        .measured_value = 0,
         .min_value = HUMID_MIN,
         .max_value = HUMID_MAX,
     };
@@ -103,7 +103,7 @@ void esp_zb_task(void *pvParameters)
 
     // ------------------------------ Cluster CO2 -----------------------------------
     esp_zb_carbon_dioxide_measurement_cluster_cfg_t carbon_dioxide_meas_cfg = {
-        .measured_value = 500,
+        .measured_value = 0,
         .min_measured_value = CO2_MIN,
         .max_measured_value = CO2_MAX,
     };
