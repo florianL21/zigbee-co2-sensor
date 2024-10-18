@@ -1,9 +1,13 @@
+#pragma once
+
+#include <stdint.h>
 #include "esp_zigbee_core.h"
+#include "zboss_api.h"
 
 /* Zigbee configuration */
 #define INSTALLCODE_POLICY_ENABLE false /* enable the install code policy for security */
 #define ED_AGING_TIMEOUT ESP_ZB_ED_AGING_TIMEOUT_64MIN
-#define ED_KEEP_ALIVE 3000                                               /* 3000 millisecond */
+#define ED_KEEP_ALIVE 60000                                               /* 60s */
 #define HA_ESP_CO2_ENDPOINT 10                                         /* device endpoint, used to process controlling commands */
 #define ESP_ZB_PRIMARY_CHANNEL_MASK ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 
@@ -26,3 +30,8 @@
     {                                                      \
         .host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE, \
     }
+
+
+void reportAttribute(uint8_t endpoint, uint16_t clusterID, uint16_t attributeID, void *value, uint8_t value_length);
+
+

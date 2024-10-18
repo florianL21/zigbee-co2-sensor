@@ -59,24 +59,16 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-      - run: mkdir -p release && cp esp_web_tools_manifest.json release/
-      - name: Fill in the release tag for the manifest file
-        uses: richardrigutins/replace-in-files@v2
-        with:
-          files: release/esp_web_tools_manifest.json
-          search-text: '{release}'
-          replacement-text: ${{ inputs.version }}
+      - run: mkdir -p release
       - name: Download built binaries
         uses: actions/download-artifact@v4
         with:
           path: release
           pattern: co2_sensor_*
           merge-multiple: true
-      - run: mkdir -p docs/bin_latest && cp release/co2_sensor_*.bin docs/bin_latest/
-      - name: Commit binaries
+      - name: Create release tag
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: Release of ${{ inputs.version }}
           tagging_message: ${{ inputs.version }}
           skip_checkout: true
           skip_fetch: false
