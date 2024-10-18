@@ -31,10 +31,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - uses: robinraju/release-downloader@v1
+        with:
+          fileName: '*.bin'
+          out-file-path: 'docs/bin_latest'
+          latest: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
