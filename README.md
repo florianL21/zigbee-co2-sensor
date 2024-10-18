@@ -54,7 +54,9 @@ The firmware is configured to use the following PIO pins by default:
 
 With the suggested breakout boards from above it would be wired up like this:
 
-![Screenshot of erase flash option in the web UI](images/wire_diagram.png)
+![Wiring diagram](images/wire_diagram.png)
+
+Please note that if you pan on using the included enclose you should solder your wires to the BACK of the sensors PCB!
 
 ## Flashing
 
@@ -62,6 +64,9 @@ You can very easily flash the firmware using a handy web interface.
 Simply go to the link below and click the connect button (note that you will have to use a supported browser for this to work):
 
 [Web flash tool](https://florianl21.github.io/zigbee-co2-sensor/)
+
+If the flashing does not work you may already have a firmware on the device that puts the ESP into deep sleep (will also be the case if you try to update this firmware).
+In such a case you will need to hold the boot button of the ESP before plugging it into USB to put it into download mode (or be very fast with clicking the buttons in the web interface right after plugging it in).
 
 ## Un-pairing/factory reset
 
