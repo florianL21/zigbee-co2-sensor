@@ -68,6 +68,8 @@ void sdc41_task(void *pvParameters)
         error = scd4x_get_data_ready_flag(&data_ready_flag);
         if (error) {
             ESP_LOGE(TAG, "Error executing scd4x_get_data_ready_flag(): %i", error);
+            vTaskDelay(100 / portTICK_PERIOD_MS);
+            measurement_running = false;
             continue;
         }
         if (!data_ready_flag) {

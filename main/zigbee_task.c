@@ -64,7 +64,7 @@ void esp_zb_task(void *pvParameters)
         .zcl_version = ESP_ZB_ZCL_BASIC_ZCL_VERSION_DEFAULT_VALUE,
         .power_source = 0x04, // mains powered
     };
-    uint32_t ApplicationVersion = 0x0001;
+    uint32_t ApplicationVersion = 0x0002;
     uint32_t StackVersion = 0x0002;
     uint32_t HWVersion = 0x0002;
     DEFINE_PSTRING(ManufacturerName, "FlorianL");
