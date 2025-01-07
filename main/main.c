@@ -13,12 +13,11 @@
 
 static const char *TAG = "CO2";
 
-TaskHandle_t xSdc41Task;
+TaskHandle_t xSdc41Task = NULL;
 TaskHandle_t xZigbeeTask;
 
 // Turn on to get debug output for diagnosing issues with system sleeping behaviour
 #define DEBUG_SLEEP 0
-
 
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
@@ -27,7 +26,10 @@ static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 
 void start_sensor_measurements()
 {
-    xTaskCreate(sdc41_task, "sdc41_task", 4096, NULL, 5, &xSdc41Task);
+    if (xSdc41Task == NULL)
+    {
+        xTaskCreate(sdc41_task, "sdc41_task", 4096, NULL, 5, &xSdc41Task);
+    }
 }
 
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
@@ -48,10 +50,13 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         if (err_status == ESP_OK)
         {
             ESP_LOGI(TAG, "Device started up in %s factory-reset mode", esp_zb_bdb_is_factory_new() ? "" : "non");
-            if (esp_zb_bdb_is_factory_new()) {
+            if (esp_zb_bdb_is_factory_new())
+            {
                 ESP_LOGI(TAG, "Start network steering");
                 esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
-            } else {
+            }
+            else
+            {
                 ESP_LOGI(TAG, "Device rebooted");
                 start_sensor_measurements();
             }
@@ -74,6 +79,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
                      extended_pan_id[3], extended_pan_id[2], extended_pan_id[1], extended_pan_id[0],
                      esp_zb_get_pan_id(), esp_zb_get_current_channel(), esp_zb_get_short_address());
             zb_zdo_pim_set_long_poll_interval(ED_KEEP_ALIVE);
+            start_sensor_measurements();
         }
         else
         {
@@ -81,32 +87,35 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_STEERING, 1000);
         }
         break;
+
     case ESP_ZB_COMMON_SIGNAL_CAN_SLEEP:
-        BaseType_t xResult = xTaskNotifyWait( pdFALSE,          /* Don't clear bits on entry. */
-                                 ULONG_MAX,        /* Clear all bits on exit. */
-                                 &sensor_state,
-                                 0 ); /* do not wait for the flag to be set, simply skip going to sleep in this case */
-        if( xResult == pdPASS )
+        BaseType_t xResult = xTaskNotifyWait(pdFALSE,   /* Don't clear bits on entry. */
+                                             ULONG_MAX, /* Clear all bits on exit. */
+                                             &sensor_state,
+                                             0); /* do not wait for the flag to be set, simply skip going to sleep in this case */
+        if (xResult == pdPASS)
         {
-            switch(sensor_state) {
-                case CO2_MEASUREMENT_PENDING:
-                    allow_sleep = false;
-                    break;
-                case CO2_MEASUREMENT_DONE:
-                    allow_sleep = true;
-                    break;
+            switch (sensor_state)
+            {
+            case CO2_MEASUREMENT_PENDING:
+                allow_sleep = false;
+                break;
+            case CO2_MEASUREMENT_DONE:
+                allow_sleep = true;
+                break;
             }
         }
-        if(allow_sleep) {
-            // sensor values have been read and sending via zigbee was requested
-            #if DEBUG_SLEEP
+        if (allow_sleep)
+        {
+// sensor values have been read and sending via zigbee was requested
+#if DEBUG_SLEEP
             ESP_LOGI(TAG, "Going to sleep");
-            #endif
+#endif
             esp_zb_sleep_now();
-            #if DEBUG_SLEEP
+#if DEBUG_SLEEP
             esp_sleep_source_t wake_up_cause = esp_sleep_get_wakeup_cause();
             ESP_LOGI(TAG, "Woke up because: %d", wake_up_cause);
-            #endif
+#endif
         }
         break;
     default:
@@ -121,23 +130,25 @@ static esp_err_t esp_zb_power_save_init(void)
     esp_pm_config_t pm_config = {
         .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
         .min_freq_mhz = 40,
-        .light_sleep_enable = true
-    };
+        .light_sleep_enable = true};
     return esp_pm_configure(&pm_config);
 }
 
-void configure_internal_antenna(void) {
+void configure_internal_antenna(void)
+{
     gpio_reset_pin(GPIO_NUM_3);
     gpio_reset_pin(GPIO_NUM_14);
     gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_3, 0);//turn on antenna selection
+    gpio_set_level(GPIO_NUM_3, 0); // turn on antenna selection
     vTaskDelay(100 / portTICK_PERIOD_MS);
     gpio_set_direction(GPIO_NUM_14, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_14, 0);//use internal antenna
+    gpio_set_level(GPIO_NUM_14, 0); // use internal antenna
 }
 #if DEBUG_SLEEP
-void pm_dump(void *pvParameters) {
-    while (1) {
+void pm_dump(void *pvParameters)
+{
+    while (1)
+    {
         esp_pm_dump_locks(stdout);
         vTaskDelay(30000 / portTICK_PERIOD_MS);
     }
@@ -159,7 +170,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_zb_platform_config(&config));
     /* hardware related and device init */
     xTaskCreate(esp_zb_task, "Zigbee_main", 4096, NULL, 5, &xZigbeeTask);
-    #if DEBUG_SLEEP
+#if DEBUG_SLEEP
     xTaskCreate(pm_dump, "pm_dump", 4096, NULL, 5, NULL);
-    #endif
+#endif
 }
