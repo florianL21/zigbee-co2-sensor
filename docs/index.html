@@ -8,7 +8,14 @@
     </head>
     <body>
         <esp-web-install-button
-        manifest="esp_web_tools_manifest.json"
-        ></esp-web-install-button>
+        manifest="battery_manifest.json"
+        >
+        <button slot="activate">Install mains powered FW</button>
+        </esp-web-install-button>
+        <esp-web-install-button
+        manifest="mains_manifest.json"
+        >
+        <button slot="activate">Install battery powered FW (experimental)</button>
+        </esp-web-install-button>
     </body>
 </html>

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+  "name": "List",
+  "version": "3.0.1",
+  "description": "The Ultimate Collection of Lists. This library extends the Arduino ecosystem with the functionality of several easy-to-use lists for numerous purposes.",
+  "keywords": [
+    "arduino",
+    "list",
+    "datatype",
+    "storage"
+  ],
+  "homepage": "https://nkaaf.github.io/Arduino-List",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nkaaf/Arduino-List"
+  },
+  "authors": {
+    "name": "Niklas Kaaf",
+    "email": "nkaaf@protonmail.com",
+    "url": "https://github.com/nkaaf",
+    "maintainer": true
+  },
+  "license": "LGPL-2.1-only",
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": "List.hpp",
+  "examples": [
+    {
+      "name": "DifferenceMutableAndImmutable",
+      "base": "examples/List/DifferenceMutableAndImmutable",
+      "files": [
+        "DifferenceMutableAndImmutable.ino"
+      ]
+    },
+    {
+      "name": "ManageElements",
+      "base": "examples/List/ManageElements",
+      "files": [
+        "ManageElements.ino"
+      ]
+    },
+    {
+      "name": "UtilsAndHelper",
+      "base": "examples/List/UtilsAndHelper",
+      "files": [
+        "UtilsAndHelper.ino"
+      ]
+    }
+  ],
+  "export": {
+    "include": [
+      "examples/*",
+      "src/*"
+    ]
+  }
+}

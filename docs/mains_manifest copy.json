@@ -1,6 +1,6 @@
 {
     "name": "Zigbee CO2 Sensor",
-    "version": "1",
+    "version": "Mains powered",
     "home_assistant_domain": "zha",
     "funding_url": "https://github.com/sponsors/florianL21",
     "new_install_prompt_erase": true,
@@ -9,13 +9,7 @@
         {
             "chipFamily": "ESP32-C6",
             "parts": [
-                { "path": "bin_latest/co2_sensor_esp32c6.bin", "offset": 0 }
-            ]
-        },
-        {
-            "chipFamily": "ESP32-H2",
-            "parts": [
-                { "path": "bin_latest/co2_sensor_esp32h2.bin", "offset": 0 }
+                { "path": "bin_latest/co2_sensor_mains_power.bin", "offset": 0 }
             ]
         }
     ]

@@ -18,10 +18,8 @@ jobs:
     strategy:
       matrix:
         target:
-          - chip: esp32c6
-            flash_freq: 80m
-          - chip: esp32h2
-            flash_freq: 48m
+          - env: battery_powered
+          - env: mains_powered
 
     runs-on: ubuntu-latest
 
@@ -30,26 +28,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-      - name: esp-idf build
-        uses: espressif/esp-idf-ci-action@v1
+      - uses: actions/cache@v4
         with:
-          esp_idf_version: v5.3
-          target: ${{ matrix.target.chip }}
-          path: .
-          command: |
-            idf.py build &&
-            idf.py merge-bin -o co2_sensor_${{ matrix.target.chip }}.bin -f raw
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+      - name: Build PlatformIO Project
+        run: pio run -t mergebin -e ${{ matrix.target.env }}
       - run: |
-          sudo mv build/zigbee_co2_sensor.elf build/co2_sensor_${{ matrix.target.chip }}.elf && \
-          sudo mv build/zigbee_co2_sensor.map build/co2_sensor_${{ matrix.target.chip }}.map
+            sudo mv .pio/build/${{ matrix.target.env }}/firmware-merged.bin .pio/build/co2_sensor_${{ matrix.target.env }}.bin
       - name: Store built binaries
         uses: actions/upload-artifact@v4
         with:
-          name: co2_sensor_${{ matrix.target.chip }}
+          name: co2_sensor_${{ matrix.target.env }}
           path: |
-            build/co2_sensor_${{ matrix.target.chip }}.bin
-            build/co2_sensor_${{ matrix.target.chip }}.elf
-            build/co2_sensor_${{ matrix.target.chip }}.map
+            .pio/build/co2_sensor_${{ matrix.target.env }}.bin
+            .pio/build/${{ matrix.target.env }}/firmware.elf
+            .pio/build/${{ matrix.target.env }}/firmware.map
   release:
     permissions:
       contents: write
