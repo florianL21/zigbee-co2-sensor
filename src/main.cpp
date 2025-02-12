@@ -196,7 +196,7 @@ static void button_hold_confirmation(void* arg)
     }
     Serial.println("Resetting Zigbee to factory and rebooting in 1s.");
     delay(1000);
-    // Zigbee.factoryReset();
+    Zigbee.factoryReset();
   }
 }
 
