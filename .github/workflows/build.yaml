@@ -18,8 +18,8 @@ jobs:
     strategy:
       matrix:
         target:
-          - env: battery_powered
-          - env: mains_powered
+          - env: battery_power
+          - env: mains_power
 
     runs-on: ubuntu-latest
 
