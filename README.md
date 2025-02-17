@@ -50,6 +50,7 @@ The firmware is configured to use the following PIO pins by default:
 | ------ | --------------------- |
 | GPIO22 | I2C SDA to SCD-41     |
 | GPIO23 | I2C SCL to SCD-41     |
+| GPIO02 | Device Reset button   |
 
 With the suggested breakout boards from above it would be wired up like this:
 

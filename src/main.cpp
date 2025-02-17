@@ -5,7 +5,8 @@
 #include "Arduino.h"
 #include "Zigbee.h"
 #include "driver/rtc_io.h"
-// #include "iot_button.h"
+#include <type_traits>
+#include <atomic>
 #include <rom/rtc.h>
 #include "driver/gpio.h"
 #include <time.h>
@@ -29,15 +30,22 @@
 #define CARBON_DIOXIDE_SENSOR_ENDPOINT_NUMBER 10
 #define TEMP_SENSOR_ENDPOINT_NUMBER 11
 
+static const char *TAG = "CO2Sensor";
 ZigbeeCarbonDioxideSensor zbCarbonDioxideSensor = ZigbeeCarbonDioxideSensor(CARBON_DIOXIDE_SENSOR_ENDPOINT_NUMBER);
 ZigbeeTempSensor zbTempSensor = ZigbeeTempSensor(TEMP_SENSOR_ENDPOINT_NUMBER);
-static const char *TAG = "sdc41_task";
 RTC_DATA_ATTR bool scd4x_initialized = false;
 RTC_DATA_ATTR bool zigbee_reporting_configured = false;
 RTC_DATA_ATTR uint16_t wakeup_counter = 0;
 esp_timer_handle_t hold_timer;
 esp_timer_handle_t cancel_timer;
 
+enum prevent_sleep_reason {
+  READY_TO_SLEEP = 0x00,
+  MEASUREMENT_ONGOING = 0x01,
+  WAITING_FOR_BUTTON_ACTION = 0x02,
+};
+
+volatile std::atomic<uint8_t> may_sleep {READY_TO_SLEEP};
 
 float get_battery_percent() {
   uint32_t Vbatt = 0;
@@ -48,8 +56,16 @@ float get_battery_percent() {
   return (float)map(Vbattf, 3.8, 4.2, 0, 100);
 }
 
+void attempt_sleep() {
+  if(may_sleep.load() == READY_TO_SLEEP) {
+    ESP_LOGI(TAG, "Going to sleep now");
+    esp_deep_sleep_start();
+  }
+}
+
 void sdc41_task(void *pvParameters)
 {
+    may_sleep |= MEASUREMENT_ONGOING;
     int16_t error = 0;
     sensirion_i2c_hal_init(SDC4X_SDA_PIN, SDC4X_SCL_PIN);
     if(!scd4x_initialized) {
@@ -87,6 +103,7 @@ void sdc41_task(void *pvParameters)
 
     while (1)
     {
+        may_sleep |= MEASUREMENT_ONGOING;
         data_ready_flag = false;
         if(!measurement_running) {
             ESP_LOGI(TAG, "Triggering SCD4x single shot measurement...");
@@ -161,9 +178,9 @@ void sdc41_task(void *pvParameters)
                 vTaskDelay(100 / portTICK_PERIOD_MS);
                 zbTempSensor.report();
                 vTaskDelay(100 / portTICK_PERIOD_MS);
-                #ifdef BATTERY_POWERED
-                Serial.println("Going to sleep now");
-                esp_deep_sleep_start();
+                may_sleep &= (~MEASUREMENT_ONGOING);
+                #ifndef DEBUG_NO_SLEEP
+                attempt_sleep();
                 #else
                 vTaskDelay(MEASURE_INTERVAL_S * S_TO_MS_FACTOR / portTICK_PERIOD_MS);
                 #endif
@@ -194,9 +211,12 @@ static void button_hold_confirmation(void* arg)
       digitalWrite(LED_BUILTIN, HIGH);
       delay(50);
     }
-    Serial.println("Resetting Zigbee to factory and rebooting in 1s.");
+    ESP_LOGW(TAG, "Resetting Zigbee to factory and rebooting in 1s.");
     delay(1000);
     Zigbee.factoryReset();
+  } else {
+    may_sleep &= (~WAITING_FOR_BUTTON_ACTION);
+    attempt_sleep();
   }
 }
 
@@ -206,11 +226,14 @@ static void button_hold_cancel(void* arg)
   if (digitalRead(BOOT_PIN) == HIGH) {
     esp_timer_stop(hold_timer);
     digitalWrite(LED_BUILTIN, HIGH);
+    may_sleep &= (~WAITING_FOR_BUTTON_ACTION);
+    attempt_sleep();
   }
 }
 
 
 void boot_button_handler() {
+  may_sleep |= WAITING_FOR_BUTTON_ACTION;
   if (digitalRead(BOOT_PIN) == LOW) {
     digitalWrite(LED_BUILTIN, LOW);
     if (!esp_timer_is_active(hold_timer)) {
@@ -228,11 +251,11 @@ void boot_button_handler() {
 }
 
 void setup() {
-  Serial.begin(115200);
-
+  auto wakeup_reason = esp_sleep_get_wakeup_cause();
   // Init button switch
   pinMode(BOOT_PIN, INPUT_PULLUP);
   attachInterrupt(BOOT_PIN, boot_button_handler, CHANGE);
+  pinMode(BOOT_BRIDGE_PIN, INPUT_PULLUP);
   // led on esp
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -253,11 +276,16 @@ void setup() {
   };
   ESP_ERROR_CHECK(esp_timer_create(&cancel_timer_args, &cancel_timer));
 
-  #ifdef BATTERY_POWERED
+  if(ESP_SLEEP_WAKEUP_EXT1 == wakeup_reason) {
+    // woke up from deep sleep because of button press. Call ISR handler for button pin change
+    boot_button_handler();
+  }
+
+  #ifndef DEBUG_NO_SLEEP
   // Configure the wake up source
   esp_sleep_enable_timer_wakeup(MEASURE_INTERVAL_S * uS_TO_S_FACTOR);
   // configure the boot button as wake up source
-  esp_sleep_enable_ext1_wakeup_io(1 << BOOT_PIN, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup_io(1 << BOOT_BRIDGE_PIN, ESP_EXT1_WAKEUP_ANY_LOW);
   #endif
 
   // Optional: set Zigbee device name and model
@@ -296,43 +324,45 @@ void setup() {
   // Add endpoint to Zigbee Core
   Zigbee.addEndpoint(&zbTempSensor);
 
-  #ifdef BATTERY_POWERED
+  #ifndef DEBUG_NO_SLEEP
   // Create a custom Zigbee configuration for End Device with keep alive 10s to avoid interference with reporting data
   esp_zb_cfg_t zigbeeConfig = ZIGBEE_DEFAULT_ED_CONFIG();
   zigbeeConfig.nwk_cfg.zed_cfg.keep_alive = 10000;
   #endif
 
-  Serial.println("Starting Zigbee...");
+  ESP_LOGI(TAG, "Starting Zigbee...");
   // When all EPs are registered, start Zigbee in End Device mode
-  #ifdef BATTERY_POWERED
+  #ifndef DEBUG_NO_SLEEP
   if (!Zigbee.begin(&zigbeeConfig, false))
   #else
   if (!Zigbee.begin())
   #endif
   {
-    Serial.println("Zigbee failed to start!");
-    Serial.println("Rebooting...");
+    ESP_LOGE(TAG, "Zigbee failed to start!");
+    ESP_LOGW(TAG, "Rebooting...");
     ESP.restart();
   } else {
-    Serial.println("Zigbee started successfully!");
+    ESP_LOGI(TAG, "Zigbee started successfully!");
   }
-  Serial.println("Connecting to network");
+  ESP_LOGI(TAG, "Connecting to network");
   while (!Zigbee.connected()) {
-    Serial.print(".");
     delay(100);
   }
-  Serial.println();
+  ESP_LOGI(TAG, "Connection successful");
 
-  #ifdef BATTERY_POWERED
+  #ifndef DEBUG_NO_SLEEP
   // Delay approx 1s (may be adjusted) to allow establishing proper connection with coordinator, needed for sleepy devices
   delay(1000);
   #endif
 
-  // start the emasurement task, reporting setup will be done before sending the first attribute update
+  // start the measurement task, reporting setup will be done before sending the first attribute update
   xTaskCreate(sdc41_task, "sdc41_task", 4096, NULL, 5, NULL);
 }
 
 void loop() {
-  // does nothing. everything is handled via interrupts etc.
-  delay(100);
+  delay(1000);
+  #ifndef DEBUG_NO_SLEEP
+  // Check if it is safe to go to sleep periodically as a backup
+  attempt_sleep();
+  #endif
 }

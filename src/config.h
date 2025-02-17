@@ -6,8 +6,9 @@
 
 #define SDC4X_SDA_PIN GPIO_NUM_22
 #define SDC4X_SCL_PIN  GPIO_NUM_23
+#define BOOT_BRIDGE_PIN GPIO_NUM_2 // The boot button has to be soldered to this pin for it to work for resetting the device
 // Recommened measurement interval from sensirion is 5 minutes as the default ASC settings are assuming 5 minutes
-#define MEASURE_INTERVAL_S (30)
+#define MEASURE_INTERVAL_S (60*5)
 
 
 // Sanity values for measurement bounds
